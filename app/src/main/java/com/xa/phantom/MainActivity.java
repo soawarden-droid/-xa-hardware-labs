@@ -18,13 +18,14 @@ import java.security.cert.Certificate;
 import java.security.cert.X509Certificate;
 import java.text.SimpleDateFormat;
 import java.util.*;
+import java.util.concurrent.*;
 import javax.net.ssl.*;
 
 public class MainActivity extends Activity {
     private final int BG=Color.rgb(8,12,22), PANEL=Color.rgb(17,25,39), CYAN=Color.rgb(76,225,233), WHITE=Color.rgb(228,239,248), MUTED=Color.rgb(154,171,188);
     private LinearLayout root;
     private TextView output;
-    private EditText hostField, portField;
+    private EditText hostField, portField, consoleField;
     private StringBuilder report=new StringBuilder();
     private volatile boolean busy=false;
 
@@ -85,7 +86,11 @@ public class MainActivity extends Activity {
         addButton("Resolve DNS",()->start("DNS LOOKUP",()->dns(readHost())));
         addButton("Test single TCP port",()->start("TCP CONNECT",()->tcp(readHost(),readPort())));
         addButton("Inspect TLS certificate",()->start("TLS CERTIFICATE",()->tls(readHost())));
-        root.addView(text("03  REPORT CONSOLE",14,CYAN));
+        root.addView(text("03  PHANTOM COMMAND CONSOLE",14,CYAN));
+        root.addView(text("Commands: help, device, net, dns HOST, tcp HOST PORT, tls HOST, clear, export",12,MUTED));
+        consoleField=new EditText(this);consoleField.setSingleLine(true);consoleField.setTextColor(WHITE);consoleField.setHintTextColor(MUTED);consoleField.setHint("Type a command...");root.addView(consoleField);
+        addButton("Execute command",this::executeCommand);
+        root.addView(text("04  REPORT CONSOLE",14,CYAN));
         output=text("READY • Choose a diagnostic above.",13,WHITE);
         output.setTypeface(Typeface.MONOSPACE);output.setTextIsSelectable(true);
         output.setPadding(dp(14),dp(14),dp(14),dp(14));output.setBackground(shape(PANEL));
@@ -195,6 +200,28 @@ public class MainActivity extends Activity {
             return out.toString();
         }
     }
+    private void executeCommand(){
+        String line=consoleField.getText().toString().trim();
+        if(line.isEmpty())return;
+        consoleField.setText("");
+        String[] a=line.split("\\s+");
+        String cmd=a[0].toLowerCase(Locale.US);
+        try {
+            switch(cmd){
+                case "help": appendLocal("HELP","device | net | dns HOST | tcp HOST PORT | tls HOST | clear | export");break;
+                case "device":deviceAudit();break;
+                case "net":networkSnapshot();break;
+                case "dns":if(a.length!=2)throw new IllegalArgumentException("Usage: dns HOST");start("CMD "+line,()->dns(validateHost(a[1])));break;
+                case "tcp":if(a.length!=3)throw new IllegalArgumentException("Usage: tcp HOST PORT");start("CMD "+line,()->tcp(validateHost(a[1]),validatePort(a[2])));break;
+                case "tls":if(a.length!=2)throw new IllegalArgumentException("Usage: tls HOST");start("CMD "+line,()->tls(validateHost(a[1])));break;
+                case "clear":report.setLength(0);output.setText("READY • Report cleared.");break;
+                case "export":shareReport();break;
+                default:appendLocal("UNKNOWN COMMAND",cmd+" — type help");
+            }
+        }catch(Exception e){appendLocal("COMMAND ERROR",e.getMessage());}
+    }
+    private String validateHost(String h){if(h.length()==0||h.length()>253||!h.matches("[a-zA-Z0-9.:_-]+"))throw new IllegalArgumentException("Invalid host");return h;}
+    private int validatePort(String s){int p=Integer.parseInt(s);if(p<1||p>65535)throw new IllegalArgumentException("Port must be 1–65535");return p;}
     private void shareReport(){
         if(report.length()==0){Toast.makeText(this,"Run a diagnostic first",Toast.LENGTH_SHORT).show();return;}
         Intent i=new Intent(Intent.ACTION_SEND);i.setType("text/plain");
